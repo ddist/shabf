@@ -30,18 +30,35 @@ byte* stob(const char *s) {
     return hash;
 }
 
-/* Argument struct for queued jobs. */
-typedef struct _fn_arg {
-    u64int bin_size, bin_offset, bin_extra;
-} fn_arg_t;
-typedef fn_arg_t* fn_arg_p;
-
-/* Function to execute for each queued job. Receives a struct as argument. */
-void compute_frame(fn_arg_p frame) {
-    return;
+void printResult(byte* password, byte* hash) {
+    char sPass[6];
+    memcpy(sPass, password, 5);
+    sPass[5] = 0;
+    printf("%s => ", sPass);
+    for (int i = 0; i < SHA256_DIGEST_LENGTH; i++)
+        printf("%02x", hash[i]);
+    printf("\n");
 }
 
+byte *secretPassword;
 
+/* Function to execute for each queued job. Receives a struct as argument. */
+void compute_frame(int *a) {
+    byte password[5] = { 97 + *a };
+    for (password[1] = 97; password[1] < 123; password[1]++) {
+        for (password[2] = 97; password[2] < 123; password[2]++) {
+            for (password[3] = 97; password[3] < 123; password[3]++) {
+                for (password[4] = 97; password[4] < 123; password[4]++) {
+                    byte *hasherino = SHA256(password, 5, 0);
+                    if (matches(secretPassword, hasherino)){
+                        printResult(password, hasherino);
+                    }
+                }
+            }
+        }
+    }
+    return;
+}
 
 int main(int argc, char **argv) {
 
@@ -80,33 +97,17 @@ int main(int argc, char **argv) {
         memcpy(hashes[i], line, HASH_SIZE);
     }
 
-    /* CALCULATE AND DISTRIBUTE WORKLOAD TO WORKERS */
-    u64int search_space = (u64int)pow(VOCABULARY_SIZE, password_len);
-    u64int bin_size = search_space/n_workers;
-    u64int bin_remainder = search_space%n_workers;
-    u64int bin_extra;
-
-    do {
-        bin_extra = bin_remainder/n_workers;
-        bin_size += bin_extra;
-        bin_remainder = bin_remainder - bin_extra*n_workers;
-    } while(bin_extra != 0);
-
     /* CREATE THREAD POOL */
     thread_pool_p t_pool;
     create_thread_pool((unsigned int) n_workers, &t_pool);
 
+    secretPassword = stob(hashes[0]);
+
     /* QUEUE JOBS */
-    for (int i = 0; i < n_workers; i++) {
-        fn_arg_p frame = malloc(sizeof(fn_arg_t));
-        frame->bin_size = bin_size;
-        frame->bin_offset = bin_size*i;
-        if(i == n_workers-1) {
-            frame->bin_extra = bin_remainder;
-        } else {
-            frame->bin_extra = 0;
-        }
-        add_job_to_thread_pool((void*)compute_frame, frame, FREE_ARG, t_pool);
+    for (int i = 0; i < VOCABULARY_SIZE; i++) {
+        int *a = malloc(sizeof(int));
+        *a = i;
+        add_job_to_thread_pool((void*)compute_frame, a, FREE_ARG, t_pool);
     }
     thread_pool_wait(t_pool);
 
